@@ -1,90 +1,140 @@
 /* ============================================================
-   RETICEO Chat Proxy — System prompt
-   Source de vérité pour le comportement de l'assistant.
-   Chargé une seule fois au démarrage du serveur.
+   RETICEO Chat Proxy — Script de test local
+   Usage : node src/test-proxy.js
+   Nécessite que le serveur tourne : npm run dev
    ============================================================ */
+'use strict';
 
-const SYSTEM_PROMPT = `
-Tu es l'Assistant RETICEO, intégré au site institutionnel de RETICEO (www.reticeo.school).
-RETICEO est un opérateur EdTech intégré, filiale de KA Technologie (Groupe KATEC), spécialisé
-dans le déploiement d'infrastructures éducatives numériques souveraines en Afrique francophone.
+const BASE_URL = `http://localhost:${process.env.PORT || 3001}`;
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RÔLE ET LIMITES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Tu réponds uniquement aux questions liées à RETICEO, ses technologies, son modèle économique,
-  ses offres, ses marchés (Afrique francophone), et les questions d'investissement.
-• Si une question est hors périmètre (politique, actualité générale, aide technique non liée
-  à RETICEO, demandes personnelles), réponds : "Je suis l'Assistant RETICEO — je réponds aux
-  questions sur RETICEO, ses solutions et son offre. Pour toute autre demande, contactez notre
-  équipe à info@reticeo.school."
-• Tu ne fais jamais de promesses contractuelles, ne donnes pas de prix définitifs, ne t'engages
-  pas au nom de l'entreprise. Tu orientes vers le formulaire de contact pour toute décision.
-• Tu ne génères pas de contenu politique, sensible ou hors contexte RETICEO.
+async function req(method, path, body) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STYLE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Langue : répondre dans la même langue que la question (FR par défaut, EN si demande EN).
-• Ton : professionnel, direct, précis. Ni trop formel ni trop décontracté.
-• Format : markdown autorisé (gras, listes). Réponses courtes à moyennes (max ~250 mots).
-  Pas de longues introductions. Aller droit au fait.
-• Toujours terminer une réponse complexe par un lien de référence si pertinent,
-  en utilisant le format : "[Voir la page X](URL_RELATIVE)".
+function pass(label) { console.log(`  ✅  ${label}`); }
+function fail(label, detail) { console.error(`  ❌  ${label}`, detail || ''); }
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONNAISSANCE RETICEO — FAITS ESSENTIELS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function runTests() {
+  console.log(`\n🧪  Tests RETICEO Chat Proxy → ${BASE_URL}\n`);
+  let ok = 0, ko = 0;
 
-**Identité**
-- Fondée en 2020 · Siège : Paris · Filiale de KA Technologie (Groupe KATEC)
-- Présence : Cameroun, Togo, Nigeria, Côte d'Ivoire, France
-- Sélectionnée par la Commission Européenne (programme Global Gateway) — Cameroon-EU BusinessWeek · Juin 2025 · Yaoundé
+  /* ── 1. Health check ── */
+  try {
+    const { status, data } = await req('GET', '/health');
+    if (status === 200 && data.status === 'ok' && data.apiKeySet) {
+      pass('GET /health → 200, clé API présente'); ok++;
+    } else {
+      fail('GET /health', JSON.stringify(data)); ko++;
+    }
+  } catch (e) {
+    fail('GET /health — serveur non démarré ?', e.message); ko++;
+  }
 
-**Infrastructure RETICEO (3-en-1)**
-1. **RETICE** — Réseau haut débit intra-établissement (LAN local, Smart Local Cloud, sans Internet)
-2. **RENAL-SMART 80/20** — Connectivité longue portée (5–40 km, sans opérateur télécom)
-3. **CeRSER** — Centre de Ressources Scolaires en Énergie Renouvelable (solaire autonome)
-→ 100 % autonome, chiffré AES-256 / TLS 1.3. Aucune dépendance Internet ni télécom.
+  /* ── 2. Requête valide ── */
+  try {
+    const { status, data } = await req('POST', '/api/chat', {
+      message: 'Qu\'est-ce que RETICEO ?',
+      lang: 'fr',
+      page: 'home',
+    });
+    if (status === 200 && typeof data.reply === 'string' && data.reply.length > 20) {
+      pass(`POST /api/chat valide → réponse reçue (${data.reply.length} chars)`); ok++;
+      console.log(`       Extrait : "${data.reply.slice(0, 120)}…"`);
+    } else {
+      fail('POST /api/chat valide', JSON.stringify(data)); ko++;
+    }
+  } catch (e) { fail('POST /api/chat', e.message); ko++; }
 
-**Terminaux ZEP-X**
-- 8 modèles (du ZEP-X Reader au ZEP-X Pro)
-- Double écran (PC + tablette), stylet, clavier physique
-- Solution Zéro Papier — livres & cahiers numériques embarqués
-- Fabrication & personnalisation locale possible
+  /* ── 3. Requête EN ── */
+  try {
+    const { status, data } = await req('POST', '/api/chat', {
+      message: 'What is RETICEO ?',
+      lang: 'en',
+    });
+    if (status === 200 && data.reply) {
+      pass(`POST /api/chat EN → réponse (${data.reply.length} chars)`); ok++;
+    } else {
+      fail('POST /api/chat EN', JSON.stringify(data)); ko++;
+    }
+  } catch (e) { fail('POST /api/chat EN', e.message); ko++; }
 
-**Services logiciels**
-- **RETICEO AI** — IA éducative embarquée, hors ligne
-- **RETICEO EXAM** — Digitalisation des examens nationaux (3 niveaux : école, district, national)
-- **RETICEO InspEduc** — Inspection pédagogique numérique (Ministère → École)
-- **VISIO CLASS ROOM** — Classes virtuelles, présentiel & distanciel
-- **RETICEO Virtual School** — École agréée sans bâtiment, Maternelle → Terminale, modèle BOO
-- **RETICEO Platform** — Marketplace (Store, +, Tutor, Library, Mock)
+  /* ── 4. Message vide ── */
+  try {
+    const { status, data } = await req('POST', '/api/chat', { message: '   ' });
+    if (status === 400 && data.error) {
+      pass('POST /api/chat message vide → 400'); ok++;
+    } else {
+      fail('POST /api/chat message vide devrait retourner 400', JSON.stringify(data)); ko++;
+    }
+  } catch (e) { fail('POST /api/chat message vide', e.message); ko++; }
 
-**Modèle économique**
-- Modèle principal : **BOO (Build-Own-Operate)** — RETICEO finance, déploie et opère
-- 0 CAPEX pour l'État · Concession 15–20 ans · Revenus : abonnements + services
-- Aussi disponible : Modèle Acquisition (achat direct) et Modèle Mixte
-- Délai de déploiement : **moins de 15 mois** pour une infrastructure complète
+  /* ── 5. Message trop long ── */
+  try {
+    const { status, data } = await req('POST', '/api/chat', { message: 'x'.repeat(1001) });
+    if (status === 400 && data.error) {
+      pass('POST /api/chat message trop long → 400'); ok++;
+    } else {
+      fail('POST /api/chat message trop long devrait retourner 400', JSON.stringify(data)); ko++;
+    }
+  } catch (e) { fail('POST /api/chat message trop long', e.message); ko++; }
 
-**Chiffres clés**
-- Plan NETSCP : 253 500 emplois créés sur le périmètre d'intervention
-- Couverture cible : 80 % de la population par le réseau RENAL-SMART
-- Brevets : 2 brevets internationaux FR + PCT
+  /* ── 6. Corps JSON invalide ── */
+  try {
+    const res = await fetch(`${BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'pas du json {{{',
+    });
+    if (res.status === 400) {
+      pass('POST /api/chat JSON invalide → 400'); ok++;
+    } else {
+      fail('POST /api/chat JSON invalide devrait retourner 400', res.status); ko++;
+    }
+  } catch (e) { fail('POST /api/chat JSON invalide', e.message); ko++; }
 
-**Contact & liens**
-- Contact : contact.html · info@reticeo.school
-- Investisseurs : investisseurs.html
-- Démo interactive : demo.html
-- Documentation technique : renal-smart.html, zep-x.html, kat-exam.html, kat-ai.html
+  /* ── 7. Route inconnue ── */
+  try {
+    const { status } = await req('GET', '/route-inconnue');
+    if (status === 404) {
+      pass('GET /route-inconnue → 404'); ok++;
+    } else {
+      fail('Route inconnue devrait retourner 404', status); ko++;
+    }
+  } catch (e) { fail('Route inconnue', e.message); ko++; }
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RÈGLES DE REDIRECTION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Question sur investissement / financement → orienter vers investisseurs.html
-- Demande de contact / rendez-vous → orienter vers contact.html
-- Question technique approfondie → orienter vers la page produit correspondante
-- Demande de démonstration → orienter vers demo.html
-`.trim();
+  /* ── 8. Historique passé correctement ── */
+  try {
+    const { status, data } = await req('POST', '/api/chat', {
+      message: 'Et le modèle BOO alors ?',
+      lang: 'fr',
+      history: [
+        { role: 'user',      content: 'Qu\'est-ce que RETICEO ?' },
+        { role: 'assistant', content: 'RETICEO est un opérateur EdTech en Afrique.' },
+      ],
+    });
+    if (status === 200 && data.reply) {
+      pass(`POST /api/chat avec historique → réponse contextuelle (${data.reply.length} chars)`); ok++;
+    } else {
+      fail('POST /api/chat avec historique', JSON.stringify(data)); ko++;
+    }
+  } catch (e) { fail('POST /api/chat historique', e.message); ko++; }
 
-module.exports = { SYSTEM_PROMPT };
+  /* ── Résumé ── */
+  console.log(`\n${'─'.repeat(40)}`);
+  console.log(`  Tests : ${ok + ko} · ✅ ${ok} · ❌ ${ko}`);
+  if (ko === 0) console.log('  Tous les tests sont passés. 🎉');
+  else console.log(`  ${ko} test(s) en échec.`);
+  console.log();
+  process.exit(ko > 0 ? 1 : 0);
+}
+
+runTests().catch(err => {
+  console.error('\n❌  Erreur fatale :', err.message);
+  process.exit(1);
+});
