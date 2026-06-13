@@ -79,11 +79,10 @@ const chatLimiter = rateLimit({
 
 /** GET /health — Vérification de l'état du proxy */
 app.get('/health', (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.json({
-    status:    'ok',
-    service:   'reticeo-chat-proxy',
+    status: 'ok', service: 'reticeo-chat-proxy',
     timestamp: new Date().toISOString(),
-    env:       IS_DEV ? 'development' : 'production',
     apiKeySet: !!process.env.ANTHROPIC_API_KEY,
   });
 });
